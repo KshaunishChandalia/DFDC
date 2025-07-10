@@ -1,0 +1,52 @@
+import pandas as pd
+from deepface import DeepFace
+from sklearn.metrics import confusion_matrix, accuracy_score
+import os
+
+# Load your CSV file
+df = pd.read_csv('your_file.csv')  # Replace with actual file path
+
+# DeepFace models and metrics
+models = ["VGG-Face", "Facenet", "Facenet512", "OpenFace", "DeepFace", "DeepID", "ArcFace", "Dlib", "SFace"]
+metrics = ["cosine", "euclidean", "euclidean_l2"]
+
+# Output storage
+results = []
+predictions = []
+ground_truths = []
+
+# Loop through each row in the dataset
+for idx, row in df.iterrows():
+    img1_path = os.path.join(row['foldername'], row['image_1_name'])
+    img2_path = os.path.join(row['foldername'], row['image_2_name'])
+    true_label = row['Ground truth']
+    
+    try:
+        # Run verification
+        result = DeepFace.verify(
+            img1_path, img2_path, 
+            model_name=models, 
+            distance_metric=metrics,
+            enforce_detection=False, 
+            prog_bar=False
+        )
+
+        # Check if verification is true for *any* combination
+        # result will be a list of dicts, one for each model+metric
+        pred = any([r['verified'] for r in result])  # Predict True if any model+metric says it's same person
+
+        predictions.append(int(pred))
+        ground_truths.append(int(true_label))
+        results.append(result)
+
+    except Exception as e:
+        print(f"Error at index {idx}: {e}")
+        predictions.append(0)  # or -1 if you want to ignore this in eval
+        ground_truths.append(int(true_label))
+
+# Evaluation
+tn, fp, fn, tp = confusion_matrix(ground_truths, predictions).ravel()
+accuracy = accuracy_score(ground_truths, predictions)
+
+print(f"TP: {tp}, TN: {tn}, FP: {fp}, FN: {fn}")
+print(f"Accuracy: {accuracy:.4f}")
