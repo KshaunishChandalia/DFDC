@@ -1,52 +1,102 @@
 import pandas as pd
+import numpy as np
+import os
 from deepface import DeepFace
 from sklearn.metrics import confusion_matrix, accuracy_score
-import os
+from tqdm import tqdm
+from collections import defaultdict
 
-# Load your CSV file
+# Load CSV
 df = pd.read_csv('your_file.csv')  # Replace with actual file path
 
-# DeepFace models and metrics
+# DeepFace models
 models = ["VGG-Face", "Facenet", "Facenet512", "OpenFace", "DeepFace", "DeepID", "ArcFace", "Dlib", "SFace"]
-metrics = ["cosine", "euclidean", "euclidean_l2"]
 
-# Output storage
-results = []
-predictions = []
+# Initialize logs for each metric
+cosine_scores = defaultdict(list)
+euclidean_scores = defaultdict(list)
+euclidean_l2_scores = defaultdict(list)
+angular_scores = defaultdict(list)
+
+# Ground truth and predictions
 ground_truths = []
+predictions = []
 
-# Loop through each row in the dataset
-for idx, row in df.iterrows():
-    img1_path = os.path.join(row['foldername'], row['image_1_name'])
-    img2_path = os.path.join(row['foldername'], row['image_2_name'])
-    true_label = row['Ground truth']
-    
+# Define default thresholds
+thresholds = {
+    "cosine": 0.4,
+    "euclidean": 10,
+    "euclidean_l2": 0.6,
+    "angular": 0.4,
+}
+
+# Angular distance calculation
+def angular_distance(u, v):
+    cos_sim = np.dot(u, v) / (np.linalg.norm(u) * np.linalg.norm(v))
+    cos_sim = np.clip(cos_sim, -1.0, 1.0)
+    return np.arccos(cos_sim) / np.pi
+
+# Main loop
+for idx, row in tqdm(df.iterrows(), total=len(df)):
     try:
-        # Run verification
-        result = DeepFace.verify(
-            img1_path, img2_path, 
-            model_name=models, 
-            distance_metric=metrics,
-            enforce_detection=False, 
-            prog_bar=False
-        )
+        img1_path = os.path.join(row['foldername'], row['image_1_name'])
+        img2_path = os.path.join(row['foldername'], row['image_2_name'])
+        true_label = int(row['Ground truth'])
+        
+        match_found = False  # Default prediction
 
-        # Check if verification is true for *any* combination
-        # result will be a list of dicts, one for each model+metric
-        pred = any([r['verified'] for r in result])  # Predict True if any model+metric says it's same person
+        for model_name in models:
+            # Get embeddings
+            emb1 = np.array(DeepFace.represent(img_path=img1_path, model_name=model_name, enforce_detection=False)[0]["embedding"])
+            emb2 = np.array(DeepFace.represent(img_path=img2_path, model_name=model_name, enforce_detection=False)[0]["embedding"])
 
-        predictions.append(int(pred))
-        ground_truths.append(int(true_label))
-        results.append(result)
+            # Compute distances
+            cos_dist = 1 - (np.dot(emb1, emb2) / (np.linalg.norm(emb1) * np.linalg.norm(emb2)))
+            euc_dist = np.linalg.norm(emb1 - emb2)
+            euc_l2_dist = euc_dist / np.linalg.norm(emb1 + emb2)
+            ang_dist = angular_distance(emb1, emb2)
+
+            # Save distances
+            cosine_scores[model_name].append(cos_dist)
+            euclidean_scores[model_name].append(euc_dist)
+            euclidean_l2_scores[model_name].append(euc_l2_dist)
+            angular_scores[model_name].append(ang_dist)
+
+            # Predict match for any metric
+            if (
+                cos_dist <= thresholds["cosine"] or
+                euc_dist <= thresholds["euclidean"] or
+                euc_l2_dist <= thresholds["euclidean_l2"] or
+                ang_dist <= thresholds["angular"]
+            ):
+                match_found = True
+                break  # Early stop on match
+
+        predictions.append(int(match_found))
+        ground_truths.append(true_label)
 
     except Exception as e:
         print(f"Error at index {idx}: {e}")
-        predictions.append(0)  # or -1 if you want to ignore this in eval
-        ground_truths.append(int(true_label))
+        predictions.append(0)
+        ground_truths.append(int(row['Ground truth']))
 
-# Evaluation
+# Evaluate
 tn, fp, fn, tp = confusion_matrix(ground_truths, predictions).ravel()
 accuracy = accuracy_score(ground_truths, predictions)
 
-print(f"TP: {tp}, TN: {tn}, FP: {fp}, FN: {fn}")
+print(f"\nTP: {tp}, TN: {tn}, FP: {fp}, FN: {fn}")
 print(f"Accuracy: {accuracy:.4f}")
+
+##------------------
+
+import matplotlib.pyplot as plt
+
+# Example: Plot cosine distance distribution for ArcFace
+plt.hist(cosine_scores['ArcFace'], bins=50, alpha=0.7, color='skyblue')
+plt.axvline(x=thresholds['cosine'], color='red', linestyle='--', label='Threshold')
+plt.title("Cosine Distance - ArcFace")
+plt.xlabel("Cosine Distance")
+plt.ylabel("Frequency")
+plt.legend()
+plt.grid()
+plt.show()
