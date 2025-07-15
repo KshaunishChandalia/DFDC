@@ -114,3 +114,169 @@ pip install \
   nvidia-cusparse-cu12==12.1.0.106 \
   nvidia-nvtx-cu12==12.1.105
 
+##-----------------------------------------------------------------------------------------------------------------------------
+
+
+Below is a **minimal, drop‑in logging upgrade** for the script you pasted.
+It keeps the same single‑file structure so you can copy‑paste and run immediately, yet gives you:
+
+* one‑line call to `get_logger()` anywhere
+* configurable console level via `LOG_LEVEL` env‑var
+* daily‑rotating file log (`aadhaar_pipeline.log`) in a `logs/` folder
+* tracebacks and timing around the heavy steps (OCR, PDF decode, save)
+
+```python
+# ───────────────────────── logger.py ─────────────────────────
+"""
+Central logger usable from any module in this script‑based project.
+Put this block at the very top of your file or in a small helper
+module you can import anywhere.
+"""
+import logging
+from logging.handlers import TimedRotatingFileHandler
+import os
+from pathlib import Path
+
+def _build_logger() -> logging.Logger:
+    level = os.getenv("LOG_LEVEL", "INFO").upper()
+    log = logging.getLogger("aadhaar_pipeline")
+    if log.handlers:          # already configured (avoid duplicates)
+        return log
+
+    log.setLevel(level)
+    fmt = logging.Formatter(
+        "%(asctime)s | %(levelname)s | %(name)s | %(message)s"
+    )
+
+    # Console handler
+    ch = logging.StreamHandler()
+    ch.setFormatter(fmt)
+    log.addHandler(ch)
+
+    # File handler (rotates at midnight, keeps 7 days)
+    log_dir = Path("logs")
+    log_dir.mkdir(exist_ok=True)
+    fh = TimedRotatingFileHandler(
+        log_dir / "aadhaar_pipeline.log", when="midnight", backupCount=7
+    )
+    fh.setFormatter(fmt)
+    log.addHandler(fh)
+
+    log.debug("Logger initialised with level %s", level)
+    return log
+
+LOGGER = _build_logger()
+
+def get_logger(name: str | None = None) -> logging.Logger:  # convenience
+    return LOGGER if name is None else LOGGER.getChild(name)
+# ───────────────────────── end logger.py ─────────────────────
+```
+
+---
+
+## 1  Wire it into your functions & classes
+
+Below I show **only the lines that change** in your original script; everything
+else stays as‑is.
+
+```python
+# add at the very top, right after imports
+from logger import get_logger
+log = get_logger(__name__)
+
+# ───── pdf_bytes_to_images ─────
+def pdf_bytes_to_images(pdf_bytes):
+    images = []
+    try:
+        log.debug("Decoding PDF (%d bytes)", len(pdf_bytes))
+        pdf_file = fitz.open(stream=pdf_bytes, filetype="pdf")
+        for page_num in range(len(pdf_file)):
+            page = pdf_file.load_page(page_num)
+            pix = page.get_pixmap()
+            img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+            images.append(img)
+        log.info("Converted %d page(s) of PDF to images", len(images))
+    except Exception as e:
+        log.exception("Error converting PDF")
+    finally:
+        if 'pdf_file' in locals() and pdf_file:
+            pdf_file.close()
+    return images
+```
+
+```python
+# ───── MaskingTask.__init__ ─────
+class MaskingTask:
+    def __init__(self):
+        self.log = get_logger(self.__class__.__name__)
+        self.log.info("Loading PaddleOCR and paddlex models…")
+        self.ocr_engine = PaddleOCR(use_angle_cls=True, lang="en")
+        self.pdx_model = pdx.load_model("output/infer_model")
+```
+
+```python
+# inside addhar_check
+self.log.debug("Running OCR – %d boxes detected", len(result[0]))
+```
+
+```python
+# ───── read_pdf_from_folder ─────
+def read_pdf_from_folder(folder_path):
+    masker = MaskingTask()
+    stamper = StampingTask()
+    log.info("Scanning folder %s", folder_path)
+    i = 0
+    for filename in os.listdir(folder_path):
+        if filename.endswith(".txt"):
+            log.debug("Processing %s", filename)
+            ...
+            img2.save(f"samples/samplesAugmented/output_image_{i}.jpg")
+            log.info("Saved output_image_%d.jpg", i)
+            i += 1
+```
+
+*Use `self.log.debug()` or `.info()` inside any helper you feel is critical.*
+For heavy loops (OCR, image saving), wrap with `time.perf_counter()` if you
+need latency metrics:
+
+```python
+start = time.perf_counter()
+# … do work …
+self.log.info("Masking finished in %.2f s", time.perf_counter() - start)
+```
+
+---
+
+## 2  Run & verify
+
+```bash
+export LOG_LEVEL=DEBUG          # optional, defaults to INFO
+python your_script.py
+tail -f logs/aadhaar_pipeline.log
+```
+
+You should see clear statements like:
+
+```
+2025‑07‑15 09:12:43,812 | INFO  | MaskingTask | Loading PaddleOCR and paddlex models…
+2025‑07‑15 09:12:46,331 | INFO  | __main__    | Scanning folder samples/samplesAugmented
+2025‑07‑15 09:12:46,411 | DEBUG | __main__    | Processing doc1.txt
+2025‑07‑15 09:12:48,902 | INFO  | __main__    | Saved output_image_0.jpg
+```
+
+---
+
+### Why this is all you need for now
+
+* **No external deps** – pure stdlib logging.
+* **Thread/Fork safe** – each child process inherits the handlers.
+* **Granular control** – switch to `WARNING`/`ERROR` in prod without code edits.
+
+When you later split the codebase into modules (as in the scaffold we built),
+you can keep using `from logger import get_logger` and every part of the
+pipeline will log through the same sink.
+
+Let me know if you’d like help adding timing decorators, JSON log output, or
+integrating with a monitoring stack like Prometheus/Loki.
+
+##-----------------------------------------------------------------------------------------------------------------------------
