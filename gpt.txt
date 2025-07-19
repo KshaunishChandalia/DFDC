@@ -1,3 +1,30 @@
+def image_to_base64(path):
+    with open(path, "rb") as image_file:
+        return base64.b64encode(image_file.read()).decode("utf-8")
+
+# Final result list
+final_data = []
+
+# Process and group by filename
+for filename, img_path in image_data:
+    img_b64 = image_to_base64(img_path)
+    
+    # Search for existing filename
+    for i, (fname, b64_list) in enumerate(final_data):
+        if fname == filename:
+            b64_list.append(img_b64)
+            break
+    else:
+        # Not found, so create new entry
+        final_data.append((filename, [img_b64]))
+
+# Optional: Generate new image names (not returned, but can be printed or used)
+for filename, b64_list in final_data:
+    for i, b64_img in enumerate(b64_list):
+        new_name = f"output_image_{filename}_{i+1}"
+        print(new_name)
+
+----------
 final_data = []
 for filename, results in result_dict.items():
     if len(results) == 1:
