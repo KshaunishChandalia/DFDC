@@ -1,3 +1,15 @@
+final_data = []
+for filename, results in result_dict.items():
+    if len(results) == 1:
+        final_data.append((filename, results[0]))
+    else:
+        combined_result = ', '.join(f"{i+1}st page: {res}" if i == 0 else f"{i+1}nd page: {res}" if i == 1 else f"{i+1}th page: {res}" for i, res in enumerate(results))
+        final_data.append((filename, combined_result))
+
+# Output
+for item in final_data:
+    print(item)
+-------
 import pandas as pd
 import numpy as np
 import os
