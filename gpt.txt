@@ -1,1 +1,21 @@
-hsksn
+for label, count in label_counts.items():
+    if count < min_cluster_size:
+        # Get indices of this small cluster
+        indices = np.where(cluster_labels == label)[0]
+        
+        for idx in indices:
+            val = values[idx]
+            # Find nearest point in a large cluster
+            best_dist = float('inf')
+            best_label = None
+            for other_label, other_count in label_counts.items():
+                if other_label != label and other_count >= min_cluster_size:
+                    # Candidates from this label
+                    other_indices = np.where(cluster_labels == other_label)[0]
+                    dists = np.abs(values[other_indices] - val)
+                    min_dist = dists.min()
+                    if min_dist < best_dist:
+                        best_dist = min_dist
+                        best_label = other_label
+            if best_label is not None:
+                merged_labels[idx] = best_label
