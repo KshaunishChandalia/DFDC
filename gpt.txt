@@ -1,3 +1,126 @@
+import re
+from rapidfuzz import fuzz, process
+from collections.abc import Iterable
+
+# ---------- CONFIG ----------
+SKIP_KEYS = ['id', 'timestamp', 'created_at']  # keys to skip if any part matches
+# ----------------------------
+
+def flatten_json(y, prefix=''):
+    out = {}
+    for key, val in y.items():
+        full_key = f"{prefix}.{key}" if prefix else key
+        if isinstance(val, dict):
+            out.update(flatten_json(val, full_key))
+        else:
+            out[full_key] = val
+    return out
+
+def normalize_value(value):
+    if isinstance(value, (int, float)):
+        return str(float(value))
+    if isinstance(value, str):
+        return re.sub(r'\s+', '', value.lower())
+    return str(value)
+
+def jaccard_similarity(set1, set2):
+    if not set1 or not set2:
+        return 0.0
+    set1 = set(normalize_value(x) for x in set1)
+    set2 = set(normalize_value(x) for x in set2)
+    intersection = len(set1 & set2)
+    union = len(set1 | set2)
+    return 100.0 * intersection / union
+
+def should_skip(key, skip_keys):
+    for pattern in skip_keys:
+        if pattern.lower() in key.lower():
+            return True
+    return False
+
+def compare_jsons(json1, json2, skip_keys=None):
+    if skip_keys is None:
+        skip_keys = []
+
+    flat1 = flatten_json(json1)
+    flat2 = flatten_json(json2)
+
+    # Filter skipped keys
+    flat1 = {k: v for k, v in flat1.items() if not should_skip(k, skip_keys)}
+    flat2 = {k: v for k, v in flat2.items() if not should_skip(k, skip_keys)}
+
+    results = []
+
+    for key1, val1 in flat1.items():
+        if not flat2:
+            continue
+        best_key_match, key_score, _ = process.extractOne(key1, flat2.keys(), scorer=fuzz.ratio)
+        val2 = flat2.get(best_key_match, "")
+
+        # List/Set value comparison
+        if isinstance(val1, Iterable) and not isinstance(val1, str) and isinstance(val2, Iterable):
+            value_score = jaccard_similarity(val1, val2)
+        else:
+            norm_val1 = normalize_value(val1)
+            norm_val2 = normalize_value(val2)
+            value_score = fuzz.token_sort_ratio(norm_val1, norm_val2)
+
+        results.append({
+            'key1': key1,
+            'key2': best_key_match,
+            'key_similarity': key_score,
+            'value1': str(val1),
+            'value2': str(val2),
+            'value_similarity': value_score
+        })
+
+    return results
+
+def average_similarity_score(results):
+    if not results:
+        return 0.0, 0.0
+    key_score = sum(r['key_similarity'] for r in results) / len(results)
+    val_score = sum(r['value_similarity'] for r in results) / len(results)
+    return key_score, val_score
+
+# ------------ Example Usage ------------
+
+if __name__ == "__main__":
+    json1 = {
+        "user": {
+            "name": "Alice Johnson",
+            "age": 25,
+            "hobbies": ["Reading", "Gaming"]
+        },
+        "metadata": {
+            "created_at": "2023-05-01",
+            "id": "xyz123"
+        }
+    }
+
+    json2 = {
+        "customer": {
+            "full_name": "Alice  Johnson",
+            "years": 25.0,
+            "interests": ["gaming", "reading", "cooking"]
+        },
+        "info": {
+            "timestamp": "2023-05-01T00:00:00Z",
+            "user_id": "xyz123"
+        }
+    }
+
+    results = compare_jsons(json1, json2, skip_keys=SKIP_KEYS)
+
+    for r in results:
+        print(f"{r['key1']} ↔ {r['key2']} | KeySim: {r['key_similarity']} | ValSim: {r['value_similarity']}")
+    
+    key_avg, val_avg = average_similarity_score(results)
+    print(f"\n📊 Average Key Similarity: {key_avg:.2f}")
+    print(f"📊 Average Value Similarity: {val_avg:.2f}")
+
+
+
 for label, count in label_counts.items():
     if count < min_cluster_size:
         # Get indices of this small cluster
