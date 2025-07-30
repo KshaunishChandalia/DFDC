@@ -1,3 +1,55 @@
+from collections import defaultdict
+from typing import Any, Dict, Set, Tuple
+
+Leaf = (str, int, float, bool, type(None))
+
+def unique_keys_and_values(data: Any) -> Tuple[Set[Any], Set[Any]]:
+    keys: Set[Any] = set()
+    values: Set[Any] = set()
+
+    def walk(x: Any) -> None:
+        if isinstance(x, dict):
+            for k, v in x.items():
+                keys.add(k)
+                walk(v)
+        elif isinstance(x, (list, tuple, set)):
+            for e in x:
+                walk(e)
+        elif isinstance(x, Leaf):
+            values.add(x)
+        else:
+            # Non-leaf / uncommon types (e.g., custom classes) – ignore or handle as needed
+            pass
+
+    walk(data)
+    return keys, values
+
+
+def values_by_key(data: Any) -> Dict[Any, Set[Any]]:
+    by_key: Dict[Any, Set[Any]] = defaultdict(set)
+
+    def walk(x: Any) -> None:
+        if isinstance(x, dict):
+            for k, v in x.items():
+                # If the value is a leaf, record it for this key
+                if isinstance(v, Leaf):
+                    by_key[k].add(v)
+                else:
+                    # Recurse into containers to find leaf values deeper down
+                    walk(v)
+        elif isinstance(x, (list, tuple, set)):
+            for e in x:
+                walk(e)
+        else:
+            # A top-level leaf without a key; you can store elsewhere if you need it
+            pass
+
+    walk(data)
+    return by_key
+
+
+
+--------------------
 import re
 from rapidfuzz import fuzz, process
 from collections.abc import Iterable
