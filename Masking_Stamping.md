@@ -3,7 +3,7 @@
 This project provides a Python-based pipeline for processing documents (PDFs or images). The primary functions are to automatically correct the document's orientation, detect and mask the first 8 digits of a 12-digit Aadhaar number, and finally stamp the document with new, specified details.
 
 
-## 🔄 Code Flow
+##  Code Flow
 
 The execution of the notebook follows a sequential pipeline, where data from one function is passed as input to the next. The main driver is the `read_pdf_from_folder` function.
 
@@ -33,7 +33,7 @@ The execution of the notebook follows a sequential pipeline, where data from one
 
       * The final, stamped image is returned up the call stack. The main loop in **`read_pdf_from_folder`** receives this image and can be configured to save it to an output directory.
 
-## 🚀 Features
+##  Features
 
   - **Multi-Format Support**: Processes both PDF and standard image files (`.jpg`, `.png`).
   - **Base64 Decoding**: Handles documents provided as Base64 encoded strings within text files.
@@ -43,7 +43,7 @@ The execution of the notebook follows a sequential pipeline, where data from one
   - **Dynamic Text Stamping**: Adds custom text and details onto the processed document, creating a new, stamped image.
 -----
 
-## 🛠️ Tech Stack
+##  Tech Stack
 
   - **Language**: Python 3
   - **Core Libraries**:
@@ -54,5 +54,6 @@ The execution of the notebook follows a sequential pipeline, where data from one
   - **AI / Machine Learning**:
       - **PaddleOCR Endpoint (3.1.0)**: For Optical Character Recognition (OCR) to detect text.
       - **PaddleX**: Used with a trained model for document orientation detection.
+
 
 -----
